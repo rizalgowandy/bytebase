@@ -1,401 +1,338 @@
 <template>
-  <div class="py-4 space-y-4">
-    <ArchiveBanner v-if="instance.rowStatus == 'ARCHIVED'" />
-    <BBAttention
-      v-else-if="state.migrationSetupStatus != 'OK'"
-      :style="'WARN'"
-      :title="attentionTitle"
-      :description="attentionText"
-      :action-text="attentionActionText"
-      @click-action="state.showCreateMigrationSchemaModal = true"
-    />
-    <div class="px-6 space-y-6">
-      <InstanceForm :create="false" :instance="instance" />
-      <div
-        v-if="hasDataSourceFeature"
-        class="py-6 space-y-4 border-t divide-control-border"
-      >
-        <DataSourceTable :instance="instance" />
+  <div class="space-y-2 px-6 mb-4" v-bind="$attrs">
+    <ArchiveBanner v-if="instance.state === State.DELETED" />
+
+    <div v-if="!embedded" class="flex items-center justify-between">
+      <div class="flex items-center gap-x-2">
+        <EngineIcon :engine="instance.engine" custom-class="!h-6" />
+        <span class="text-lg font-medium">{{ instanceV1Name(instance) }}</span>
       </div>
-      <div v-else>
-        <div class="mb-4 flex items-center justify-between">
-          <BBTabFilter
-            :tab-item-list="tabItemList"
-            :selected-index="state.selectedIndex"
-            @select-index="
-              (index) => {
-                state.selectedIndex = index;
-              }
-            "
-          />
-          <div class="flex items-center space-x-4">
-            <div>
-              <BBSpin v-if="state.syncingSchema" :title="'Syncing ...'" />
-            </div>
-            <button
-              v-if="allowEdit"
-              type="button"
-              class="btn-normal"
-              @click.prevent="syncSchema"
-            >
-              Sync Now
-            </button>
-            <button
-              v-if="instance.rowStatus == 'NORMAL'"
-              type="button"
-              class="btn-primary"
-              @click.prevent="createDatabase"
-            >
-              New Database
-            </button>
-          </div>
-        </div>
-        <DatabaseTable
-          v-if="state.selectedIndex == DATABASE_TAB"
-          :mode="'INSTANCE'"
-          :database-list="databaseList"
-        />
-        <InstanceUserTable
-          v-else-if="state.selectedIndex == USER_TAB"
-          :instance-user-list="instanceUserList"
-        />
-      </div>
-      <template v-if="allowEdit">
-        <template v-if="instance.rowStatus == 'NORMAL'">
-          <BBButtonConfirm
-            :style="'ARCHIVE'"
-            :button-text="'Archive this instance'"
-            :ok-text="'Archive'"
-            :require-confirm="true"
-            :confirm-title="`Archive instance '${instance.name}'?`"
-            :confirm-description="'Archived instances will not be shown on the normal interface. You can still restore later from the Archive page.'"
-            @confirm="doArchive"
-          />
-        </template>
-        <template v-else-if="instance.rowStatus == 'ARCHIVED'">
-          <BBButtonConfirm
-            :style="'RESTORE'"
-            :button-text="'Restore this instance'"
-            :ok-text="'Restore'"
-            :require-confirm="true"
-            :confirm-title="`Restore instance '${instance.name}' to normal state?`"
-            :confirm-description="''"
-            @confirm="doRestore"
-          />
-        </template>
-      </template>
     </div>
+
+    <NTabs v-model:value="state.selectedTab">
+      <template #suffix>
+        <div class="flex items-center space-x-2">
+          <InstanceSyncButton
+            v-if="instance.state === State.ACTIVE"
+            @sync-schema="syncSchema"
+          />
+          <NButton
+            v-if="allowCreateDatabase"
+            type="primary"
+            @click.prevent="createDatabase"
+          >
+            <template #icon>
+              <PlusIcon class="h-4 w-4" />
+            </template>
+            {{ $t("instance.new-database") }}
+          </NButton>
+        </div>
+      </template>
+      <NTabPane name="overview" :tab="$t('common.overview')">
+        <InstanceForm class="-mt-2" :instance="instance">
+          <InstanceFormBody :hide-archive-restore="hideArchiveRestore" />
+          <InstanceFormButtons class="sticky bottom-0 z-10" />
+        </InstanceForm>
+      </NTabPane>
+      <NTabPane name="databases" :tab="$t('common.databases')">
+        <div class="space-y-2">
+          <div
+            class="w-full flex flex-col sm:flex-row items-start sm:items-end justify-between gap-2"
+          >
+            <AdvancedSearch
+              v-model:params="state.params"
+              class="flex-1"
+              :autofocus="false"
+              :placeholder="$t('database.filter-database')"
+              :scope-options="scopeOptions"
+              :readonly-scopes="readonlyScopes"
+            />
+            <DatabaseLabelFilter
+              v-model:selected="state.selectedLabels"
+              :database-list="databaseList"
+              :placement="'left-start'"
+            />
+          </div>
+          <DatabaseOperations :databases="selectedDatabases" />
+          <DatabaseV1Table
+            :key="`database-table.${instanceId}`"
+            mode="INSTANCE"
+            :show-selection="true"
+            :database-list="filteredDatabaseList"
+            :custom-click="true"
+            :keyword="state.params.query.trim().toLowerCase()"
+            @row-click="handleDatabaseClick"
+            @update:selected-databases="handleDatabasesSelectionChanged"
+          />
+        </div>
+      </NTabPane>
+      <NTabPane name="users" :tab="$t('instance.users')">
+        <InstanceRoleTable :instance-role-list="instanceRoleList" />
+      </NTabPane>
+    </NTabs>
   </div>
 
-  <BBAlert
-    v-if="state.showCreateMigrationSchemaModal"
-    :style="'INFO'"
-    :ok-text="'Create'"
-    :title="'Create migration schema?'"
-    :description="'Bytebase relies on migration schema to manage version control based schema migration for databases belonged to this instance.'"
-    :in-progress="state.creatingMigrationSchema"
-    @ok="
-      () => {
-        doCreateMigrationSchema();
-      }
-    "
-    @cancel="state.showCreateMigrationSchemaModal = false"
+  <Drawer
+    v-model:show="state.showCreateDatabaseModal"
+    :title="$t('quick-action.create-db')"
   >
-  </BBAlert>
-
-  <BBModal
-    v-if="state.showCreateDatabaseModal"
-    :title="'Create database'"
-    @close="state.showCreateDatabaseModal = false"
-  >
-    <!-- eslint-disable vue/attribute-hyphenation -->
-    <CreateDatabasePrepForm
-      :environmentId="instance.environment.id"
-      :instanceId="instance.id"
+    <CreateDatabasePrepPanel
+      :environment-name="environment?.name"
+      :instance-name="instance.name"
       @dismiss="state.showCreateDatabaseModal = false"
     />
-  </BBModal>
+  </Drawer>
 </template>
 
-<script lang="ts">
-import { computed, reactive, watchEffect } from "vue";
-import { useStore } from "vuex";
-import { idFromSlug, isDBAOrOwner } from "../utils";
-import ArchiveBanner from "../components/ArchiveBanner.vue";
-import DatabaseTable from "../components/DatabaseTable.vue";
-import DataSourceTable from "../components/DataSourceTable.vue";
-import InstanceUserTable from "../components/InstanceUserTable.vue";
-import InstanceForm from "../components/InstanceForm.vue";
-import CreateDatabasePrepForm from "../components/CreateDatabasePrepForm.vue";
+<script lang="tsx" setup>
+import { useTitle } from "@vueuse/core";
+import { PlusIcon } from "lucide-vue-next";
+import { NButton, NTabPane, NTabs } from "naive-ui";
+import { computed, reactive, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { useRouter, useRoute } from "vue-router";
+import AdvancedSearch from "@/components/AdvancedSearch";
+import { useCommonSearchScopeOptions } from "@/components/AdvancedSearch/useCommonSearchScopeOptions";
+import ArchiveBanner from "@/components/ArchiveBanner.vue";
+import { CreateDatabasePrepPanel } from "@/components/CreateDatabasePrepForm";
+import { EngineIcon } from "@/components/Icon";
+import InstanceSyncButton from "@/components/Instance/InstanceSyncButton.vue";
 import {
-  Database,
-  Instance,
-  InstanceMigration,
-  MigrationSchemaStatus,
-  SqlResultSet,
-} from "../types";
-import { BBTabFilterItem } from "../bbkit/types";
+  InstanceForm,
+  Form as InstanceFormBody,
+  Buttons as InstanceFormButtons,
+} from "@/components/InstanceForm/";
+import { InstanceRoleTable, Drawer } from "@/components/v2";
+import DatabaseV1Table, {
+  DatabaseOperations,
+  DatabaseLabelFilter,
+} from "@/components/v2/Model/DatabaseV1Table";
+import { useBodyLayoutContext } from "@/layouts/common";
+import {
+  pushNotification,
+  useDBSchemaV1Store,
+  useInstanceV1Store,
+  useEnvironmentV1Store,
+  useAppFeature,
+} from "@/store";
+import { instanceNamePrefix } from "@/store/modules/v1/common";
+import { useDatabaseV1List } from "@/store/modules/v1/databaseList";
+import { UNKNOWN_ID, type ComposedDatabase } from "@/types";
+import { State } from "@/types/proto/v1/common";
+import { DatabaseChangeMode } from "@/types/proto/v1/setting_service";
+import {
+  instanceV1HasCreateDatabase,
+  instanceV1Name,
+  hasWorkspaceLevelProjectPermissionInAnyProject,
+  wrapRefAsPromise,
+  autoDatabaseRoute,
+  CommonFilterScopeIdList,
+  filterDatabaseV1ByKeyword,
+  extractEnvironmentResourceName,
+  extractProjectResourceName,
+} from "@/utils";
+import type { SearchParams, SearchScope } from "@/utils";
 
-const DATABASE_TAB = 0;
-const USER_TAB = 1;
+const instanceHashList = ["overview", "databases", "users"] as const;
+export type InstanceHash = (typeof instanceHashList)[number];
+const isInstanceHash = (x: any): x is InstanceHash =>
+  instanceHashList.includes(x);
 
 interface LocalState {
-  selectedIndex: number;
-  migrationSetupStatus: MigrationSchemaStatus;
-  showCreateMigrationSchemaModal: boolean;
-  creatingMigrationSchema: boolean;
   showCreateDatabaseModal: boolean;
   syncingSchema: boolean;
+  selectedDatabaseNameList: Set<string>;
+  selectedLabels: { key: string; value: string }[];
+  params: SearchParams;
+  selectedTab: InstanceHash;
 }
 
-export default {
-  name: "InstanceDetail",
-  components: {
-    ArchiveBanner,
-    DatabaseTable,
-    DataSourceTable,
-    InstanceUserTable,
-    InstanceForm,
-    CreateDatabasePrepForm,
+const props = defineProps<{
+  instanceId: string;
+  embedded?: boolean;
+  hideArchiveRestore?: boolean;
+}>();
+
+defineOptions({
+  inheritAttrs: false,
+});
+
+if (!props.embedded) {
+  const { overrideMainContainerClass } = useBodyLayoutContext();
+  overrideMainContainerClass("!pb-0");
+}
+
+const { t } = useI18n();
+const router = useRouter();
+const instanceV1Store = useInstanceV1Store();
+const databaseChangeMode = useAppFeature("bb.feature.database-change-mode");
+
+const readonlyScopes = computed((): SearchScope[] => [
+  { id: "instance", value: props.instanceId },
+]);
+
+const state = reactive<LocalState>({
+  showCreateDatabaseModal: false,
+  syncingSchema: false,
+  selectedDatabaseNameList: new Set(),
+  selectedLabels: [],
+  params: {
+    query: "",
+    scopes: [...readonlyScopes.value],
   },
-  props: {
-    instanceSlug: {
-      required: true,
-      type: String,
-    },
+  selectedTab: "overview",
+});
+
+const route = useRoute();
+
+const scopeOptions = useCommonSearchScopeOptions(
+  computed(() => state.params),
+  [...CommonFilterScopeIdList, "project"]
+);
+
+watch(
+  () => route.hash,
+  (hash) => {
+    const targetHash = hash.replace(/^#?/g, "") as InstanceHash;
+    if (isInstanceHash(targetHash)) {
+      state.selectedTab = targetHash;
+    }
   },
-  setup(props) {
-    const store = useStore();
+  { immediate: true }
+);
 
-    const currentUser = computed(() => store.getters["auth/currentUser"]());
-
-    const state = reactive<LocalState>({
-      selectedIndex: DATABASE_TAB,
-      migrationSetupStatus: "OK",
-      showCreateMigrationSchemaModal: false,
-      creatingMigrationSchema: false,
-      showCreateDatabaseModal: false,
-      syncingSchema: false,
+watch(
+  () => state.selectedTab,
+  (tab) => {
+    router.replace({
+      hash: `#${tab}`,
+      query: route.query,
     });
+  },
+  { immediate: true }
+);
 
-    const instance = computed((): Instance => {
-      return store.getters["instance/instanceById"](
-        idFromSlug(props.instanceSlug)
-      );
-    });
+const instance = computed(() => {
+  return instanceV1Store.getInstanceByName(
+    `${instanceNamePrefix}${props.instanceId}`
+  );
+});
 
-    const checkMigrationSetup = () => {
-      store
-        .dispatch("instance/checkMigrationSetup", instance.value.id)
-        .then((migration: InstanceMigration) => {
-          state.migrationSetupStatus = migration.status;
-        });
-    };
+const environment = computed(() => {
+  return useEnvironmentV1Store().getEnvironmentByName(
+    instance.value.environment
+  );
+});
 
-    const prepareMigrationSchemaStatus = () => {
-      checkMigrationSetup();
-    };
-    watchEffect(prepareMigrationSchemaStatus);
+const { databaseList, listCache, ready } = useDatabaseV1List(
+  instance.value.name
+);
 
-    const attentionTitle = computed((): string => {
-      if (state.migrationSetupStatus == "NOT_EXIST") {
-        return "Missing migration schema";
-      } else if (state.migrationSetupStatus == "UNKNOWN") {
-        return "Unable to connect instance to check migration schema";
-      }
-      return "";
-    });
+const selectedEnvironment = computed(() => {
+  return (
+    state.params.scopes.find((scope) => scope.id === "environment")?.value ??
+    `${UNKNOWN_ID}`
+  );
+});
 
-    const attentionText = computed((): string => {
-      if (state.migrationSetupStatus == "NOT_EXIST") {
-        return (
-          "Bytebase relies on migration schema to manage version control based schema migration for databases belonged to this instance." +
-          (isDBAOrOwner(currentUser.value.role)
-            ? ""
-            : " Please contact your DBA to configure it.")
-        );
-      } else if (state.migrationSetupStatus == "UNKNOWN") {
-        return (
-          "Bytebase relies on migration schema to manage version control based schema migration for databases belonged to this instance." +
-          (isDBAOrOwner(currentUser.value.role)
-            ? " Please check the instance connection info is correct."
-            : " Please contact your DBA to configure it.")
-        );
-      }
-      return "";
-    });
+const selectedProject = computed(() => {
+  return state.params.scopes.find((scope) => scope.id === "project")?.value;
+});
 
-    const attentionActionText = computed((): string => {
-      if (isDBAOrOwner(currentUser.value.role)) {
-        if (state.migrationSetupStatus == "NOT_EXIST") {
-          return "Create migration schema";
-        } else if (state.migrationSetupStatus == "UNKNOWN") {
-          return "";
-        }
-      }
-      return "";
-    });
-
-    const hasDataSourceFeature = computed(() =>
-      store.getters["plan/feature"]("bb.data-source")
+const filteredDatabaseList = computed(() => {
+  let list = databaseList.value;
+  if (selectedEnvironment.value !== `${UNKNOWN_ID}`) {
+    list = list.filter(
+      (db) =>
+        extractEnvironmentResourceName(db.effectiveEnvironment) ===
+        selectedEnvironment.value
     );
-
-    const databaseList = computed(() => {
-      const list = store.getters["database/databaseListByInstanceId"](
-        instance.value.id
-      );
-      if (isDBAOrOwner(currentUser.value.role)) {
-        return list;
-      }
-
-      // In edge case when the user is no longer an Owner or DBA, we only want to display the database
-      // belonging to the project which the user is a member of. The returned list above may contain
-      // databases not meeting this criteria and we need to filter out them.
-      const filteredList: Database[] = [];
-      for (const database of list) {
-        for (const member of database.project.memberList) {
-          if (member.principal.id == currentUser.value.id) {
-            filteredList.push(database);
-            break;
-          }
-        }
-      }
-      return filteredList;
+  }
+  if (selectedProject.value) {
+    list = list.filter(
+      (db) => extractProjectResourceName(db.project) === selectedProject.value
+    );
+  }
+  const keyword = state.params.query.trim().toLowerCase();
+  if (keyword) {
+    list = list.filter((db) =>
+      filterDatabaseV1ByKeyword(db, keyword, [
+        "name",
+        "environment",
+        "instance",
+        "project",
+      ])
+    );
+  }
+  const labels = state.selectedLabels;
+  if (labels.length > 0) {
+    list = list.filter((db) => {
+      return labels.some((kv) => db.labels[kv.key] === kv.value);
     });
+  }
+  return list;
+});
 
-    const instanceUserList = computed(() => {
-      return store.getters["instance/instanceUserListById"](instance.value.id);
-    });
+const instanceRoleList = computed(() => {
+  return instance.value.roles;
+});
 
-    const allowEdit = computed(() => {
-      return (
-        instance.value.rowStatus == "NORMAL" &&
-        isDBAOrOwner(currentUser.value.role)
-      );
-    });
+const allowCreateDatabase = computed(() => {
+  return (
+    databaseChangeMode.value === DatabaseChangeMode.PIPELINE &&
+    instance.value.state === State.ACTIVE &&
+    hasWorkspaceLevelProjectPermissionInAnyProject("bb.issues.create") &&
+    instanceV1HasCreateDatabase(instance.value)
+  );
+});
 
-    const tabItemList = computed((): BBTabFilterItem[] => {
-      return [
-        {
-          title: "Databases",
-          alert: false,
-        },
-        {
-          title: "Users",
-          alert: false,
-        },
-      ];
-    });
-
-    const doArchive = () => {
-      store
-        .dispatch("instance/patchInstance", {
-          instanceId: instance.value.id,
-          instancePatch: {
-            rowStatus: "ARCHIVED",
-          },
-        })
-        .then((updatedInstance) => {
-          store.dispatch("notification/pushNotification", {
-            module: "bytebase",
-            style: "SUCCESS",
-            title: `Successfully archived instance '${updatedInstance.name}'.`,
-          });
-        });
-    };
-
-    const doRestore = () => {
-      store
-        .dispatch("instance/patchInstance", {
-          instanceId: instance.value.id,
-          instancePatch: {
-            rowStatus: "NORMAL",
-          },
-        })
-        .then((updatedInstance) => {
-          store.dispatch("notification/pushNotification", {
-            module: "bytebase",
-            style: "SUCCESS",
-            title: `Successfully restored instance '${updatedInstance.name}'.`,
-          });
-        });
-    };
-
-    const doCreateMigrationSchema = () => {
-      state.creatingMigrationSchema = true;
-      store
-        .dispatch("instance/createMigrationSetup", instance.value.id)
-        .then((resultSet: SqlResultSet) => {
-          state.creatingMigrationSchema = false;
-          if (resultSet.error) {
-            store.dispatch("notification/pushNotification", {
-              module: "bytebase",
-              style: "CRITICAL",
-              title: `Failed to create migration schema for instance '${instance.value.name}'.`,
-              description: resultSet.error,
-            });
-          } else {
-            checkMigrationSetup();
-            store.dispatch("notification/pushNotification", {
-              module: "bytebase",
-              style: "SUCCESS",
-              title: `Successfully created migration schema for '${instance.value.name}'.`,
-            });
-          }
-          state.showCreateMigrationSchemaModal = false;
-        });
-    };
-
-    const syncSchema = () => {
-      state.syncingSchema = true;
-      store
-        .dispatch("sql/syncSchema", instance.value.id)
-        .then((resultSet: SqlResultSet) => {
-          state.syncingSchema = false;
-          if (resultSet.error) {
-            store.dispatch("notification/pushNotification", {
-              module: "bytebase",
-              style: "CRITICAL",
-              title: `Failed to sync schema for instance '${instance.value.name}'.`,
-              description: resultSet.error,
-            });
-          } else {
-            store.dispatch("notification/pushNotification", {
-              module: "bytebase",
-              style: "SUCCESS",
-              title: `Successfully synced schema for instance '${instance.value.name}'.`,
-              description: resultSet.error,
-            });
-          }
-        })
-        .catch(() => {
-          state.syncingSchema = false;
-        });
-    };
-
-    const createDatabase = () => {
-      state.showCreateDatabaseModal = true;
-    };
-
-    return {
-      DATABASE_TAB,
-      USER_TAB,
-      state,
-      attentionTitle,
-      attentionText,
-      attentionActionText,
-      hasDataSourceFeature,
-      instance,
-      databaseList,
-      instanceUserList,
-      allowEdit,
-      tabItemList,
-      doArchive,
-      doRestore,
-      doCreateMigrationSchema,
-      syncSchema,
-      createDatabase,
-    };
-  },
+const syncSchema = async (enableFullSync: boolean) => {
+  await instanceV1Store.syncInstance(instance.value.name, enableFullSync);
+  // Remove the database list cache for the instance.
+  listCache.deleteCache(instance.value.name);
+  await wrapRefAsPromise(ready, true);
+  if (enableFullSync) {
+    // Clear the db schema metadata cache entities.
+    // So we will re-fetch new values when needed.
+    const dbSchemaStore = useDBSchemaV1Store();
+    databaseList.value.forEach((database) =>
+      dbSchemaStore.removeCache(database.name)
+    );
+  }
+  pushNotification({
+    module: "bytebase",
+    style: "SUCCESS",
+    title: t(
+      "instance.successfully-synced-schema-for-instance-instance-value-name",
+      [instance.value.title]
+    ),
+  });
 };
+
+const createDatabase = () => {
+  state.showCreateDatabaseModal = true;
+};
+
+useTitle(instance.value.title);
+
+const handleDatabaseClick = (event: MouseEvent, database: ComposedDatabase) => {
+  const url = router.resolve(autoDatabaseRoute(router, database)).fullPath;
+  if (event.ctrlKey || event.metaKey) {
+    window.open(url, "_blank");
+  } else {
+    router.push(url);
+  }
+};
+
+const handleDatabasesSelectionChanged = (
+  selectedDatabaseNameList: Set<string>
+): void => {
+  state.selectedDatabaseNameList = selectedDatabaseNameList;
+};
+
+const selectedDatabases = computed((): ComposedDatabase[] => {
+  return databaseList.value.filter((db) =>
+    state.selectedDatabaseNameList.has(db.name)
+  );
+});
 </script>

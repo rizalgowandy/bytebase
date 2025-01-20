@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+# MySQL packages
+mysql-*.tar*
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -20,9 +23,6 @@
 # Frontend asset
 dist
 
-# Dev database
-data
-
 # build folder
 bytebase-build
 
@@ -30,3 +30,12 @@ bytebase-build
 .idea
 
 .DS_Store
+
+dist/
+docs/openapi/swagger.json
+docs/sqlservice/swagger.json
+frontend/public/monaco-workers/
+frontend/src/types/plan.yaml
+frontend/src/types/iam/*.yaml
+scripts/.air.toml.local
+

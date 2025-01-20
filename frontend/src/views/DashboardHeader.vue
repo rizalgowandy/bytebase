@@ -1,317 +1,244 @@
 <template>
-  <div class="flex items-center justify-between h-16">
-    <div class="flex items-center">
-      <div class="flex-shrink-0 w-44">
-        <router-link
-          to="/"
-          class="select-none"
-          active-class=""
-          exact-active-class=""
-          ><img
-            class="h-12 w-auto"
-            src="../assets/logo-full.svg"
-            alt="Bytebase"
-        /></router-link>
-      </div>
-      <div class="hidden sm:block">
-        <div class="ml-6 flex items-baseline space-x-1">
-          <router-link to="/project" class="bar-link px-2 py-2 rounded-md"
-            >Projects</router-link
-          >
+  <div class="flex items-center justify-between h-10 px-4 my-1 space-x-3">
+    <BytebaseLogo
+      v-if="showLogo"
+      class="shrink-0"
+      :redirect="WORKSPACE_ROUTE_LANDING"
+    />
+    <ProjectSwitchPopover />
+    <router-link
+      :to="sqlEditorLink"
+      class="flex flex-row justify-center items-center"
+      exact-active-class=""
+      target="_blank"
+    >
+      <NButton size="small">
+        <template #icon>
+          <SquareTerminalIcon class="w-4 h-auto" />
+        </template>
+        <span class="whitespace-nowrap">{{ $t("sql-editor.self") }}</span>
+      </NButton>
+    </router-link>
 
-          <router-link to="/db" class="bar-link px-2 py-2 rounded-md"
-            >Databases</router-link
+    <div class="flex-1 flex justify-end items-center space-x-3">
+      <NButton
+        class="!hidden md:!flex"
+        size="small"
+        @click="onClickSearchButton"
+      >
+        <template #icon>
+          <SearchIcon class="w-4 h-auto" />
+        </template>
+        <span class="text-control-placeholder text-sm mr-4">
+          {{ $t("common.search") }}
+        </span>
+        <span class="flex items-center space-x-1">
+          <kbd
+            class="h-4 flex items-center justify-center bg-black bg-opacity-10 leading-none rounded px-1 text-control overflow-y-hidden"
           >
-
-          <router-link
-            v-if="showDBAItem"
-            to="/instance"
-            class="bar-link px-2 py-2 rounded-md"
-            >Instances</router-link
-          >
-
-          <router-link to="/environment" class="bar-link px-2 py-2 rounded-md"
-            >Environments</router-link
-          >
-          <router-link
-            to="/setting/general"
-            class="bar-link px-2 py-2 rounded-md"
-            >Settings</router-link
-          >
-        </div>
-      </div>
-    </div>
-    <div>
-      <div class="flex items-center space-x-3">
-        <div
-          v-if="showSwitchPlan"
-          class="
-            hidden
-            md:flex
-            sm:flex-row
-            items-center
-            space-x-2
-            text-sm
-            font-medium
-          "
-        >
-          <span class="hidden lg:block font-normal text-accent">Plan</span>
-          <div
-            v-if="currentPlan != 0"
-            class="bar-link"
-            @click.prevent="switchToFree"
-          >
-            Free
-          </div>
-          <div v-else class="underline">Free</div>
-          <div
-            v-if="currentPlan != 1"
-            class="bar-link"
-            @click.prevent="switchToTeam"
-          >
-            Team
-          </div>
-          <div v-else class="underline">Team</div>
-          <!-- <div
-            v-if="currentPlan != 2"
-            class="bar-link"
-            @click.prevent="switchToEnterprise"
-          >
-            Enterprise
-          </div>
-          <div v-else class="underline">Enterprise</div> -->
-        </div>
-        <div
-          v-if="!isRelease"
-          class="
-            hidden
-            md:flex
-            sm:flex-row
-            items-center
-            space-x-2
-            text-sm
-            font-medium
-          "
-        >
-          <span class="hidden lg:block font-normal text-accent">Role</span>
-          <div
-            v-if="currentUser.role != 'OWNER'"
-            class="bar-link"
-            @click.prevent="switchToOwner"
-          >
-            Owner
-          </div>
-          <div v-else class="underline">Owner</div>
-          <div
-            v-if="currentUser.role != 'DBA'"
-            class="bar-link"
-            @click.prevent="switchToDBA"
-          >
-            DBA
-          </div>
-          <div v-else class="underline">DBA</div>
-          <div
-            v-if="currentUser.role != 'DEVELOPER'"
-            class="bar-link"
-            @click.prevent="switchToDeveloper"
-          >
-            Developer
-          </div>
-          <div v-else class="underline">Developer</div>
-        </div>
-        <router-link to="/inbox" exact-active-class="">
-          <span
-            v-if="inboxSummary.hasUnread"
-            class="
-              absolute
-              rounded-full
-              ml-4
-              -mt-1
-              h-2.5
-              w-2.5
-              bg-accent
-              opacity-75
-            "
-          ></span>
-          <svg
-            class="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            ></path>
-          </svg>
-        </router-link>
-        <div class="ml-2">
-          <ProfileDropdown />
-        </div>
-        <div class="ml-2 -mr-2 flex sm:hidden">
-          <!-- Mobile menu button -->
-          <button
-            class="icon-link inline-flex items-center justify-center rounded-md"
-            @click.prevent="state.showMobileMenu = !state.showMobileMenu"
-          >
-            <span class="sr-only">Open main menu</span>
-            <!--
-              Heroicon name: menu
-
-              Menu open: "hidden", Menu closed: "block"
-            -->
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
+            <span v-if="isMac" class="text-base leading-none">⌘</span>
+            <span
+              v-else
+              class="tracking-tighter text-xs transform scale-x-90 leading-none"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-              ></path>
-            </svg>
-          </button>
-        </div>
-      </div>
+              Ctrl
+            </span>
+            <span class="pl-1 text-xs leading-none">K</span>
+          </kbd>
+        </span>
+      </NButton>
+      <NButton
+        v-if="currentPlan === PlanType.FREE"
+        size="small"
+        type="success"
+        @click="handleWantHelp"
+      >
+        <template #icon>
+          <MessagesSquareIcon class="w-4 h-4" />
+        </template>
+        <span class="hidden lg:block">{{ $t("common.want-help") }}</span>
+      </NButton>
+
+      <NTooltip :disabled="windowWidth >= 640">
+        <template #trigger>
+          <router-link :to="myIssueLink" class="flex">
+            <NButton size="small" @click="goToMyIssues">
+              <template #icon>
+                <CircleDotIcon class="w-4" />
+              </template>
+              <span class="hidden sm:block">{{ $t("issue.my-issues") }}</span>
+            </NButton>
+          </router-link>
+        </template>
+        {{ $t("issue.my-issues") }}
+      </NTooltip>
+
+      <ProfileBrandingLogo>
+        <ProfileDropdown :link="true" />
+      </ProfileBrandingLogo>
     </div>
   </div>
 
-  <!--
-      Mobile menu, toggle classes based on menu state.
-
-      Open: "block", closed: "hidden"
-    -->
-  <div v-if="state.showMobileMenu" class="block md:hidden">
-    <router-link to="/project" class="bar-link rounded-md block px-3 py-2"
-      >Projects</router-link
-    >
-
-    <router-link to="/db" class="bar-link rounded-md block px-3 py-2"
-      >Databases</router-link
-    >
-
-    <router-link
-      v-if="showDBAItem"
-      to="/instance"
-      class="bar-link rounded-md block px-3 py-2"
-      >Instances</router-link
-    >
-
-    <router-link to="/environment" class="bar-link rounded-md block px-3 py-2"
-      >Environments</router-link
-    >
-
-    <router-link
-      to="/setting/general"
-      class="bar-link rounded-md block px-3 py-2"
-      >Settings</router-link
-    >
-  </div>
+  <WeChatQRModal
+    v-if="state.showQRCodeModal"
+    :title="$t('common.want-help')"
+    @close="state.showQRCodeModal = false"
+  />
 </template>
 
-<script lang="ts">
-import { computed, reactive, watchEffect } from "vue";
-import { useStore } from "vuex";
+<script lang="ts" setup>
+import { defineAction, useRegisterActions } from "@bytebase/vue-kbar";
+import { useKBarHandler } from "@bytebase/vue-kbar";
+import { useLocalStorage, useWindowSize } from "@vueuse/core";
+import {
+  CircleDotIcon,
+  SearchIcon,
+  SquareTerminalIcon,
+  MessagesSquareIcon,
+} from "lucide-vue-next";
+import { NButton, NTooltip } from "naive-ui";
+import { storeToRefs } from "pinia";
+import { v4 as uuidv4 } from "uuid";
+import { computed, reactive } from "vue";
+import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
+import ProjectSwitchPopover from "@/components/Project/ProjectSwitch/ProjectSwitchPopover.vue";
+import { useCurrentProject } from "@/components/Project/useCurrentProject";
+import WeChatQRModal from "@/components/WeChatQRModal.vue";
+import {
+  WORKSPACE_ROUTE_MY_ISSUES,
+  WORKSPACE_ROUTE_LANDING,
+} from "@/router/dashboard/workspaceRoutes";
+import { SETTING_ROUTE_WORKSPACE_GENERAL } from "@/router/dashboard/workspaceSetting";
+import {
+  SQL_EDITOR_DATABASE_MODULE,
+  SQL_EDITOR_HOME_MODULE,
+  SQL_EDITOR_PROJECT_MODULE,
+} from "@/router/sqlEditor";
+import { useRecentVisit } from "@/router/useRecentVisit";
+import { useSubscriptionV1Store } from "@/store";
+import { PlanType } from "@/types/proto/v1/subscription_service";
+import {
+  extractDatabaseResourceName,
+  extractProjectResourceName,
+  hasWorkspacePermissionV2,
+} from "@/utils";
+import { getComponentIdLocalStorageKey } from "@/utils/localStorage";
+import BytebaseLogo from "../components/BytebaseLogo.vue";
+import ProfileBrandingLogo from "../components/ProfileBrandingLogo.vue";
 import ProfileDropdown from "../components/ProfileDropdown.vue";
-import { InboxSummary, PlanType, UNKNOWN_ID } from "../types";
-import { isDBAOrOwner, isDev } from "../utils";
+import { useLanguage } from "../composables/useLanguage";
+import { isValidDatabaseName, isValidProjectName } from "../types";
+
+defineProps<{
+  showLogo: boolean;
+}>();
 
 interface LocalState {
-  showMobileMenu: boolean;
+  showQRCodeModal: boolean;
+  showProjectModal: boolean;
 }
 
-export default {
-  name: "DashboardHeader",
-  components: { ProfileDropdown },
-  setup() {
-    const store = useStore();
+const { t } = useI18n();
+const subscriptionStore = useSubscriptionV1Store();
+const router = useRouter();
+const { locale } = useLanguage();
+const { record } = useRecentVisit();
+const { width: windowWidth } = useWindowSize();
 
-    const state = reactive<LocalState>({
-      showMobileMenu: false,
-    });
+const state = reactive<LocalState>({
+  showQRCodeModal: false,
+  showProjectModal: false,
+});
 
-    const currentUser = computed(() => store.getters["auth/currentUser"]());
+const params = computed(() => {
+  const route = router.currentRoute.value;
+  return {
+    projectId: route.params.projectId as string | undefined,
+    issueSlug: route.params.issueSlug as string | undefined,
+    instanceId: route.params.instanceId as string | undefined,
+    databaseName: route.params.databaseName as string | undefined,
+    changelogId: route.params.changelogId as string | undefined,
+  };
+});
 
-    const currentPlan = computed(() => store.getters["plan/currentPlan"]());
+const { project, database } = useCurrentProject(params);
 
-    const showDBAItem = computed((): boolean => {
-      return (
-        !store.getters["plan/feature"]("bb.dba-workflow") ||
-        isDBAOrOwner(currentUser.value.role)
+const isMac = navigator.platform.match(/mac/i);
+const handler = useKBarHandler();
+const onClickSearchButton = () => {
+  handler.value.show();
+};
+
+const { currentPlan } = storeToRefs(subscriptionStore);
+
+const hasGetSettingPermission = computed(() => {
+  return hasWorkspacePermissionV2("bb.settings.get");
+});
+
+const sqlEditorLink = computed(() => {
+  if (isValidProjectName(project.value.name)) {
+    if (isValidDatabaseName(database.value.name)) {
+      const { instanceName, databaseName } = extractDatabaseResourceName(
+        database.value.name
       );
-    });
-
-    const showSwitchPlan = computed((): boolean => {
-      return isDev();
-    });
-
-    const prepareInboxSummary = () => {
-      // It will also be called when user logout
-      if (currentUser.value.id != UNKNOWN_ID) {
-        store.dispatch("inbox/fetchInboxSummaryByUser", currentUser.value.id);
-      }
-    };
-
-    watchEffect(prepareInboxSummary);
-
-    const inboxSummary = computed((): InboxSummary => {
-      return store.getters["inbox/inboxSummaryByUser"](currentUser.value.id);
-    });
-
-    const switchToOwner = () => {
-      store.dispatch("auth/login", {
-        email: "demo@example.com",
-        password: "1024",
+      return router.resolve({
+        name: SQL_EDITOR_DATABASE_MODULE,
+        params: {
+          project: extractProjectResourceName(project.value.name),
+          instance: instanceName,
+          database: databaseName,
+        },
       });
-    };
+    }
+    return router.resolve({
+      name: SQL_EDITOR_PROJECT_MODULE,
+      params: {
+        project: extractProjectResourceName(project.value.name),
+      },
+    });
+  }
+  return router.resolve({
+    name: SQL_EDITOR_HOME_MODULE,
+  });
+});
 
-    const switchToDBA = () => {
-      store.dispatch("auth/login", {
-        email: "jerry@example.com",
-        password: "2048",
-      });
-    };
+const myIssueLink = computed(() => {
+  return router.resolve({
+    name: WORKSPACE_ROUTE_MY_ISSUES,
+  });
+});
 
-    const switchToDeveloper = () => {
-      store.dispatch("auth/login", {
-        email: "tom@example.com",
-        password: "4096",
-      });
-    };
+const goToMyIssues = () => {
+  record(myIssueLink.value.fullPath);
+  // Trigger page reload manually.
+  useLocalStorage<string>(
+    getComponentIdLocalStorageKey(WORKSPACE_ROUTE_MY_ISSUES),
+    ""
+  ).value = uuidv4();
+};
 
-    const switchToFree = () => {
-      store.dispatch("plan/changePlan", PlanType.FREE);
-    };
+const kbarActions = computed(() => {
+  if (!hasGetSettingPermission.value) {
+    return [];
+  }
+  return [
+    defineAction({
+      id: "bb.navigation.global.settings",
+      name: t("common.settings"),
+      section: t("kbar.navigation"),
+      keywords: "navigation",
+      perform: () => router.push({ name: SETTING_ROUTE_WORKSPACE_GENERAL }),
+    }),
+  ];
+});
+useRegisterActions(kbarActions);
 
-    const switchToTeam = () => {
-      store.dispatch("plan/changePlan", PlanType.TEAM);
-    };
-
-    const switchToEnterprise = () => {
-      store.dispatch("plan/changePlan", PlanType.ENTERPRISE);
-    };
-
-    return {
-      state,
-      currentUser,
-      currentPlan,
-      showDBAItem,
-      showSwitchPlan,
-      inboxSummary,
-      switchToOwner,
-      switchToDBA,
-      switchToDeveloper,
-      switchToFree,
-      switchToTeam,
-      switchToEnterprise,
-    };
-  },
+const handleWantHelp = () => {
+  if (locale.value === "zh-CN") {
+    state.showQRCodeModal = true;
+  } else {
+    window.open("https://www.bytebase.com/docs/faq#how-to-reach-us", "_blank");
+  }
 };
 </script>

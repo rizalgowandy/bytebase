@@ -1,110 +1,170 @@
-<!--
-  rgba(209, 213, 219, 0.8) is bg-gray-300
--->
 <template>
-  <div
-    class="fixed inset-0 w-full h-screen flex items-center justify-center z-40"
-    style="background-color: rgba(209, 213, 219, 0.8)"
+  <NModal
+    :show="show"
+    :auto-focus="false"
+    :trap-focus="trapFocus"
+    :close-on-esc="false"
+    :mask-closeable="maskClosable"
+    @mask-click="maskClosable && upmost && tryClose()"
   >
     <div
-      class="
-        relative
-        max-h-screen
-        w-full
-        max-w-max
-        bg-white
-        shadow-lg
-        rounded-lg
-        p-8
-        flex
-        space-y-6
-        divide-y divide-block-border
-      "
+      v-bind="$attrs"
+      class="bb-modal"
+      :data-overlay-stack-id="id"
+      :data-overlay-stack-upmost="upmost"
     >
-      <div>
-        <div class="absolute left-0 top-0 my-4 mx-8 text-xl text-main">
-          {{ title }}
-          <div
-            v-if="subtitle"
-            class="pr-1 bg-white text-sm text-control whitespace-nowrap"
-          >
-            {{ subtitle }}
-          </div>
+      <div class="modal-header" :class="headerClass">
+        <div class="text-lg text-main mr-2 flex-1 overflow-hidden">
+          <slot name="title"><component :is="renderTitle" /></slot>
+          <slot name="subtitle"><component :is="renderSubtitle" /></slot>
         </div>
-        <button
+        <NButton
           v-if="showClose"
-          class="absolute right-0 top-0 my-4 mx-4 text-control-light"
+          quaternary
+          size="small"
           aria-label="close"
-          @click.prevent="close"
+          @click.prevent="tryClose()"
         >
           <span class="sr-only">Close</span>
-          <!-- Heroicon name: x -->
-          <svg
-            class="h-6 w-6"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+          <XIcon class="w-5 h-auto hover:opacity-80" />
+        </NButton>
       </div>
-      <div class="pt-4 px-0.5 max-h-screen overflow-auto w-full">
+
+      <div class="modal-container" :class="containerClass">
         <slot />
       </div>
     </div>
-  </div>
+  </NModal>
 </template>
 
 <script lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { XIcon } from "lucide-vue-next";
+import { NButton, NModal } from "naive-ui";
+import type { PropType, RenderFunction } from "vue";
+import { defineComponent, h } from "vue";
+import { toRef } from "vue";
+import { useOverlayStack } from "@/components/misc/OverlayStackManager.vue";
+import { useEmitteryEventListener } from "@/composables/useEmitteryEventListener";
+import type { VueClass } from "@/utils";
 
-export default {
-  name: "BBModal",
+export default defineComponent({
+  name: "BBModalV2",
+  components: {
+    NModal,
+    NButton,
+    XIcon,
+  },
+  inheritAttrs: false,
   props: {
+    show: {
+      type: Boolean,
+      default: true,
+    },
     title: {
-      required: true,
-      type: String,
+      default: "",
+      type: [String, Function] as PropType<string | RenderFunction>,
     },
     subtitle: {
       default: "",
-      type: String,
+      type: [String, Function] as PropType<string | RenderFunction>,
     },
     showClose: {
       type: Boolean,
       default: true,
     },
+    headerClass: {
+      type: [String, Object, Array] as PropType<VueClass>,
+      default: undefined,
+    },
+    containerClass: {
+      type: [String, Object, Array] as PropType<VueClass>,
+      default: undefined,
+    },
+    closeOnEsc: {
+      type: Boolean,
+      default: true,
+    },
+    maskClosable: {
+      type: Boolean,
+      // Default to `false` to make it behaves consistent with legacy BBModal
+      default: false,
+    },
+    beforeClose: {
+      type: Function as PropType<() => Promise<boolean>>,
+      default: undefined,
+    },
+    trapFocus: {
+      type: Boolean,
+      default: undefined,
+    },
   },
-  emits: ["close"],
+  emits: ["close", "update:show"],
   setup(props, { emit }) {
-    const close = () => {
-      emit("close");
-    };
+    const { id, upmost, events } = useOverlayStack(toRef(props, "show"));
 
-    const escHandler = (e: KeyboardEvent) => {
-      if (e.code == "Escape") {
-        close();
+    useEmitteryEventListener(events, "esc", () => {
+      if (upmost.value && props.closeOnEsc) {
+        tryClose();
       }
+    });
+
+    const tryClose = async () => {
+      const { beforeClose } = props;
+      if (beforeClose) {
+        const pass = await beforeClose();
+        if (!pass) return;
+      }
+      emit("close");
+      emit("update:show", false);
     };
 
-    onMounted(() => {
-      document.addEventListener("keydown", escHandler);
-    });
+    const renderTitle = () => {
+      if (typeof props.title === "function") {
+        return props.title();
+      }
+      return props.title;
+    };
 
-    onUnmounted(() => {
-      document.removeEventListener("keydown", escHandler);
-    });
+    const renderSubtitle = () => {
+      if (typeof props.subtitle === "function") {
+        return props.subtitle();
+      }
+      if (props.subtitle) {
+        return h(
+          "div",
+          {
+            class: "text-sm text-control whitespace-nowrap",
+          },
+          [h("span", { class: "inline-block" }, props.subtitle)]
+        );
+      }
+      return null;
+    };
 
     return {
-      close,
+      tryClose,
+      renderTitle,
+      renderSubtitle,
+      id,
+      upmost,
     };
   },
-};
+});
 </script>
+
+<style scoped lang="postcss">
+.bb-modal {
+  @apply bg-white shadow-lg rounded-md py-3 flex pointer-events-auto flex-col gap-3;
+
+  max-width: calc(100vw - 80px);
+  max-height: calc(100vh - 80px);
+}
+
+.modal-header {
+  @apply relative mx-4 pb-2 flex items-center justify-between border-b border-block-border;
+}
+
+.modal-container {
+  @apply px-4 max-h-screen overflow-auto w-full h-full;
+}
+</style>

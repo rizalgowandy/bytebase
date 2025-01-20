@@ -5,16 +5,11 @@
       <main class="sm:flex">
         <div class="sm:ml-6">
           <div
-            class="
-              mt-6
-              flex
-              space-x-3
-              sm:border-l sm:border-transparent sm:pl-6
-            "
+            class="mt-6 flex space-x-3 sm:border-l sm:border-transparent sm:pl-6"
           >
-            <button class="btn-primary" @click.prevent="goHome">
-              Go back home
-            </button>
+            <NButton type="primary" @click.prevent="goHome">
+              {{ $t("error-page.go-back-home") }}
+            </NButton>
           </div>
         </div>
       </main>
@@ -23,20 +18,14 @@
   </div>
 </template>
 
-<script lang="ts">
+<script lang="ts" setup>
+import { NButton } from "naive-ui";
 import { useRouter } from "vue-router";
-export default {
-  name: "403",
-  setup() {
-    const router = useRouter();
+import { WORKSPACE_ROOT_MODULE } from "@/router/dashboard/workspaceRoutes";
 
-    const goHome = () => {
-      router.push({ name: "workspace.home" });
-    };
+const router = useRouter();
 
-    return {
-      goHome,
-    };
-  },
+const goHome = () => {
+  router.push({ name: WORKSPACE_ROOT_MODULE });
 };
 </script>
